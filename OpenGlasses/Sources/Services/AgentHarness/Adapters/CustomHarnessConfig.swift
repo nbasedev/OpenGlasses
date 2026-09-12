@@ -13,6 +13,14 @@ struct CustomHarnessConfig: Codable, Equatable {
     /// Optional cancel endpoint; `{id}` substituted. POST.
     var cancelURLTemplate: String = ""
 
+    /// Optional endpoint that answers a pending question; `{id}` substituted. POST.
+    /// Empty ⇒ the harness reports replying as unsupported rather than silently doing nothing.
+    var inputURLTemplate: String = ""
+
+    /// Optional endpoint recording that a result was spoken; `{id}` substituted. POST.
+    /// Empty ⇒ acknowledgement is skipped, and a reconnect may re-announce a finished run.
+    var ackURLTemplate: String = ""
+
     /// Auth header applied to every request (header name + value). Empty ⇒ no auth header.
     var authHeader: String = "Authorization"
     var authValue: String = ""
@@ -20,6 +28,15 @@ struct CustomHarnessConfig: Codable, Equatable {
     /// JSON body keys for the start request.
     var promptField: String = "prompt"
     var projectField: String = "project"
+
+    /// Body key naming which coding agent should run, and the value to send.
+    ///
+    /// Settings hold a single Custom harness, and a persona carries no harness identity, so
+    /// "Hey Codex" and "Hey Claude" would otherwise reach the same backend. Naming the agent
+    /// explicitly in the request lets one endpoint route the two apart — and never infers the
+    /// choice from the wording of a spoken prompt.
+    var agentField: String = "agent"
+    var agentValue: String = ""
 
     /// Plan CN: body key carrying a base64 JPEG of the wearer's view. **Empty by default, meaning
     /// never attach.** An arbitrary user-configured endpoint must not start receiving multi-megabyte
@@ -74,6 +91,10 @@ extension CustomHarnessConfig {
         var body: [String: Any] = [promptField: prompt]
         if let project, !project.isEmpty { body[projectField] = project }
 
+        let agentKey = agentField.trimmingCharacters(in: .whitespacesAndNewlines)
+        let agent = agentValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !agentKey.isEmpty, !agent.isEmpty { body[agentKey] = agent }
+
         // Plan CN: only when the user named a field for it.
         let field = imageField.trimmingCharacters(in: .whitespacesAndNewlines)
         let carriesImage = !field.isEmpty && attachment != nil
@@ -85,6 +106,41 @@ extension CustomHarnessConfig {
         // A few megabytes of base64 on cellular does not fit in 30 s, and a timeout here surfaces
         // as "couldn't start the agent" — sending the user to look in entirely the wrong place.
         request.timeoutInterval = carriesImage ? 90 : 30
+        return request
+    }
+
+    /// Build the request that answers a pending question, or `nil` when no input URL is set.
+    ///
+    /// Carries the spoken words as well as the yes/no, because a clarification like "should this
+    /// apply to authenticated users?" cannot be answered by a boolean.
+    func inputRequest(runID: String, approved: Bool, answer: String?) -> URLRequest? {
+        let template = inputURLTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !template.isEmpty,
+              let filled = fillTemplate(template, runID: runID),
+              let url = URL(string: filled) else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyAuth(&request)
+        var body: [String: Any] = ["approved": approved]
+        if let answer = answer?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty {
+            body["answer"] = answer
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 15
+        return request
+    }
+
+    /// Build the acknowledgement request, or `nil` when no ack URL is set.
+    func ackRequest(runID: String) -> URLRequest? {
+        let template = ackURLTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !template.isEmpty,
+              let filled = fillTemplate(template, runID: runID),
+              let url = URL(string: filled) else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        applyAuth(&request)
+        request.timeoutInterval = 15
         return request
     }
 

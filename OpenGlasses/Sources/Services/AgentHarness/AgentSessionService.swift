@@ -163,6 +163,17 @@ final class AgentSessionService: ObservableObject {
         emit(summary)
         eventTask?.cancel()
         eventTask = nil
+        acknowledgeAnnouncement(of: activeRun)
+    }
+
+    /// Tell the endpoint this result has been spoken.
+    ///
+    /// Reconnecting re-polls from the start, so without a record of what was already announced a
+    /// finished job is read out again every time the phone comes back. Best-effort: failing to
+    /// acknowledge must not turn a completed run into a visible error.
+    private func acknowledgeAnnouncement(of run: AgentRun?) {
+        guard let run, let harness = activeHarness as? CustomAgentHarness else { return }
+        Task { try? await harness.acknowledge(run) }
     }
 
     // MARK: - Controls
@@ -201,8 +212,25 @@ final class AgentSessionService: ObservableObject {
     /// The grant must be user-originated: reach here via `confirmPendingActionViaUserPrompt`
     /// (tool path, coordinator-prompted) or a direct UI control — never straight from a model turn.
     func respondToConfirmation(approved: Bool) async {
+        await respondToConfirmation(approved: approved, answer: nil)
+    }
+
+    /// Answer with spoken words as well as the yes/no, for a clarification that a boolean can't
+    /// carry ("no, skip authenticated users"). `answer` is forwarded when the harness supports it.
+    func respondToConfirmation(approved: Bool, answer: String?) async {
         guard let harness = activeHarness, let run = activeRun, run.status == .awaitingInput else { return }
-        try? await harness.respondToInput(run, approved: approved)
+        do {
+            if let custom = harness as? CustomAgentHarness {
+                try await custom.respondToInput(run, approved: approved, answer: answer)
+            } else {
+                try await harness.respondToInput(run, approved: approved)
+            }
+        } catch {
+            // Never say "proceeding" when the answer didn't land — the run is still blocked and
+            // the wearer would otherwise walk away believing the job had resumed.
+            emit("I couldn't send that answer to the agent: \(error.localizedDescription)")
+            return
+        }
         awaitingInputPrompt = nil
         if approved {
             activeRun?.status = .running
