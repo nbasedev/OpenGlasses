@@ -417,7 +417,15 @@ class WakeWordService: NSObject, ObservableObject {
     }
 
     func startListening() async throws {
-        guard !isListening else { return }
+        // `isListening` can outlive the audio graph that set it — an interruption, a route change
+        // when the glasses sleep, or a recognition task that ended without clearing the flag. The
+        // bare guard then made the first Start a no-op: nothing happened, and only Stop (which
+        // clears the flag) made a second press work. Trust the engine, not the flag.
+        if isListening {
+            if audioEngine?.isRunning == true { return }
+            PrivacyLog.wakeWord(.listenerRestartedAfterStaleState)
+            stopListening()
+        }
         // Push-to-Talk (Silent Mode): never run the always-on wake-word listener.
         // This is the single chokepoint — every auto-start path (launch, foreground,
         // glasses connect, returnToWakeWord, autoStart) funnels through here, so the
@@ -796,10 +804,14 @@ class WakeWordService: NSObject, ObservableObject {
                 return
             }
 
-            // Voice-activity barge-in: any meaningful speech interrupts TTS
+            // Voice-activity barge-in: meaningful speech interrupts TTS.
+            //
+            // Two words was too eager. The glasses mic hears the wearer's own answer coming back
+            // off the open-ear speakers, and any nearby conversation, so the assistant cut itself
+            // off constantly. Four words is a deliberate interruption; two is ambient noise.
             let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             let wordCount = trimmed.split(separator: " ").count
-            if wordCount >= 2 {
+            if Config.bargeInEnabled, wordCount >= 4 {
                 PrivacyLog.wakeWord(.bargeIn, trigger: .voiceActivity, count: wordCount)
                 stopFired = true
                 pauseRecognition()

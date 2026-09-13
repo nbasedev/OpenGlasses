@@ -3305,6 +3305,33 @@ struct Config {
 
     /// When enabled, the agent uses soul.md/skills.md/memory.md instead of prompt presets.
     /// The agent has its own identity and learns about the user over time.
+    /// Seconds of silence that end a spoken turn.
+    ///
+    /// The shipped default was a flat 2.0 s, which is shorter than an ordinary mid-sentence
+    /// pause — dictating anything longer than a few words got truncated. 4.0 s suits a wearer
+    /// composing a request; raise it further if you think aloud, lower it for snappier replies.
+    static var speechSilenceWindow: TimeInterval {
+        let stored = UserDefaults.standard.double(forKey: "speechSilenceWindow")
+        return stored > 0 ? stored : 4.0
+    }
+
+    static func setSpeechSilenceWindow(_ seconds: TimeInterval) {
+        UserDefaults.standard.set(seconds, forKey: "speechSilenceWindow")
+    }
+
+    /// Whether nearby speech interrupts the assistant mid-answer.
+    ///
+    /// On by default upstream, with no way to turn it off: two words of background talk — or the
+    /// wearer's own voice picked up over the glasses speakers — cut the answer short. Off means
+    /// only a wake word or the stop command interrupts.
+    static var bargeInEnabled: Bool {
+        UserDefaults.standard.object(forKey: "bargeInEnabled") as? Bool ?? true
+    }
+
+    static func setBargeInEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: "bargeInEnabled")
+    }
+
     static var agentModeEnabled: Bool {
         UserDefaults.standard.bool(forKey: "agentModeEnabled")
     }

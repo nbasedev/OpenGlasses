@@ -52,6 +52,8 @@ struct AgentHarnessSettingsView: View {
                 urlField("Start URL (POST)", text: $config.startURL)
                 urlField("Status URL — use {id}", text: $config.statusURLTemplate)
                 urlField("Cancel URL — use {id} (optional)", text: $config.cancelURLTemplate)
+                urlField("Answer URL — use {id} (optional)", text: $config.inputURLTemplate)
+                urlField("Ack URL — use {id} (optional)", text: $config.ackURLTemplate)
             } header: {
                 Text("Custom endpoint")
             } footer: {
@@ -73,12 +75,17 @@ struct AgentHarnessSettingsView: View {
             Section {
                 fieldRow("Prompt field", text: $config.promptField)
                 fieldRow("Project field", text: $config.projectField)
+                fieldRow("Image field", text: $config.imageField)
+                fieldRow("Agent field", text: $config.agentField)
+                fieldRow("Agent value", text: $config.agentValue)
                 fieldRow("Run-id path", text: $config.idPath)
                 fieldRow("Status path", text: $config.statusPath)
             } header: {
                 Text("Field mapping")
             } footer: {
-                Text("Body keys sent on start, and dot-paths read from the responses (e.g. data.run.id).")
+                Text("Body keys sent on start, and dot-paths read from the responses (e.g. data.run.id). "
+                     + "Name an image field only if the endpoint expects a base64 photo of your view. "
+                     + "Agent value picks the backend when one endpoint serves several (e.g. claude, codex).")
             }
 
             Section {

@@ -83,7 +83,13 @@ enum TurnAdmissionPolicy {
 enum SpeechContinuationPolicy {
 
     /// Today's window, and the floor: this policy may lengthen the wait, never shorten it.
-    static let baseWindow: TimeInterval = 2.0
+    ///
+    /// Raised from 2.0 s. Two seconds is not a statement's pause, it is a pause *within* a
+    /// statement — dictating a coding task ("add rate limiting to… the API routes") pauses for
+    /// thought mid-sentence, and at 2 s the window closed and the first half was sent on its own.
+    /// The cost asymmetry the `questionWindow` comment already names applies just as much here:
+    /// waiting too long is mildly awkward, cutting someone off mid-thought loses the turn.
+    static let baseWindow: TimeInterval = Config.speechSilenceWindow
 
     /// Window after the assistant has asked something. Long enough to think, short enough that a
     /// wearer who has walked away is not left with a hot mic.

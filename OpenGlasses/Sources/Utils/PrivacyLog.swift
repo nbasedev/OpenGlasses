@@ -1214,7 +1214,7 @@ enum PrivacyLog {
         /// A finish stage declined to re-open the mic because the wearer had disabled listening.
         /// Without this line the turn simply ends and the log goes quiet, which reads in the
         /// field as "after TTS nothing happened".
-        case listenerSkippedDisabled
+        case listenerSkippedDisabled, listenerRestartedAfterStaleState
         case onDeviceUnavailable, contextConfigured
         case detected, fuzzyDetected, bargeIn, stopCommand
         case recognitionFailed, sustainedSilence, audioResumed

@@ -6,6 +6,8 @@ import SwiftUI
 struct VoiceTriggersSettingsScreen: View {
     @ObservedObject var appState: AppState
     @AppStorage("wakePhrase") private var wakePhrase = "openglasses"
+    @State private var silenceWindow: TimeInterval = Config.speechSilenceWindow
+    @State private var bargeIn: Bool = Config.bargeInEnabled
 
     var body: some View {
         Form {
@@ -80,6 +82,23 @@ struct VoiceTriggersSettingsScreen: View {
                 Text("Hands-Free Triggers")
             } footer: {
                 Text("Alternative ways to start the assistant without the wake word — for noisy, silent, or no-speech situations. All are off by default. The Volume Button trigger can interfere with normal volume control; Temple Tap pauses while your own audio plays.")
+            }
+
+            Section {
+                Picker("Pause before it replies", selection: $silenceWindow) {
+                    Text("2s — snappy").tag(2.0)
+                    Text("4s — normal").tag(4.0)
+                    Text("6s — thinking time").tag(6.0)
+                    Text("10s — dictating").tag(10.0)
+                }
+                .onChange(of: silenceWindow) { _, new in Config.setSpeechSilenceWindow(new) }
+
+                Toggle("Let my voice interrupt it", isOn: $bargeIn)
+                    .onChange(of: bargeIn) { _, new in Config.setBargeInEnabled(new) }
+            } header: {
+                Text("Speech Timing")
+            } footer: {
+                Text("How long a pause ends your turn, and whether talking over the assistant stops it. Raise the pause if you are cut off mid-sentence; turn off interruption if background speech keeps stopping the reply.")
             }
         }
         .navigationTitle("Voice & Triggers")
