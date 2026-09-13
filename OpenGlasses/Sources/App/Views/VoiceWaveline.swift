@@ -167,6 +167,12 @@ struct WavelineStrand {
 /// dark mode both keep their character.
 struct VoiceAmbience: View {
     var state: VoiceVisualState = .idle
+
+    /// Live loudness of the voice being spoken, 0…1. Drives the glow so the ambience moves with
+    /// the actual words — louder syllables bloom, pauses settle — instead of holding one flat
+    /// value for the whole answer. Zero (the default) keeps the original per-state behaviour.
+    var level: Double = 0
+
     @Environment(\.appAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -184,7 +190,23 @@ struct VoiceAmbience: View {
         }
     }
 
-    private var glow: Double { Self.glow(for: state, reduceMotion: reduceMotion) }
+    private var baseGlow: Double { Self.glow(for: state, reduceMotion: reduceMotion) }
+
+    /// Glow with the live voice mixed in.
+    ///
+    /// Only while speaking, and never under Reduce Motion. The state value is the floor, so a
+    /// quiet passage still reads as "speaking"; loud syllables roughly triple it. Clamped so a
+    /// clipped sample can't wash the screen out.
+    private var glow: Double {
+        guard state == .speaking, !reduceMotion else { return baseGlow }
+        return min(0.34, baseGlow + max(0, min(1, level)) * 0.22)
+    }
+
+    /// The radius breathes with the voice too — glow alone reads as a flat brightness change.
+    private var radius: Double {
+        guard state == .speaking, !reduceMotion else { return 420 }
+        return 420 + max(0, min(1, level)) * 130
+    }
 
     var body: some View {
         ZStack {
@@ -193,14 +215,19 @@ struct VoiceAmbience: View {
                 colors: [accent.opacity(glow), .clear],
                 center: UnitPoint(x: 0.5, y: 0.42),   // behind the waveline zone
                 startRadius: 0,
-                endRadius: 420)
+                endRadius: radius)
             // A whisper of depth toward the controls, so the bottom zone reads grounded.
             LinearGradient(
                 colors: [.clear, Color.primary.opacity(0.03)],
                 startPoint: UnitPoint(x: 0.5, y: 0.55),
                 endPoint: .bottom)
         }
-        .animation(.easeInOut(duration: 0.9), value: glow)
+        // While speaking, follow the voice closely — a 0.9s ease averages every syllable away.
+        // Between states, keep the original slow settle so transitions don't snap.
+        .animation(state == .speaking ? .easeOut(duration: 0.09) : .easeInOut(duration: 0.9),
+                   value: glow)
+        .animation(state == .speaking ? .easeOut(duration: 0.09) : .easeInOut(duration: 0.9),
+                   value: radius)
         .accessibilityHidden(true)
     }
 }

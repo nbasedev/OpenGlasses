@@ -44,7 +44,11 @@ struct VoiceTab: View {
         VoiceStateProvider(session: session, openAISession: openAISession,
                            speech: appState.speechService) { voiceState in
         ZStack {
-            VoiceAmbience(state: voiceState).ignoresSafeArea()
+            // Level comes from the same service the provider observes, so a new meter sample
+            // redraws the ambience.
+            VoiceAmbience(state: voiceState,
+                          level: appState.speechService.outputLevel)
+                .ignoresSafeArea()
 
             // The tab's usable height, read once and handed down to the dock, which sizes its
             // resting rows from it minus what the surface above it measured. One-way: the panel

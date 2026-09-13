@@ -7,6 +7,15 @@ import AVFoundation
 class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     @Published var isSpeaking: Bool = false
 
+    /// Live loudness of the spoken answer, 0…1, for the voice visual.
+    ///
+    /// Published ~20×/s while a clip plays so the waveline moves with the actual voice rather
+    /// than running a canned animation. Zero whenever nothing is playing, and on the iOS-voice
+    /// path, which synthesises straight to the output and exposes no meter.
+    @Published var outputLevel: Double = 0
+
+    private var meterTimer: Timer?
+
     /// When true, TTS only speaks when glasses are connected (privacy mode).
     /// Set to false to allow phone speaker output without glasses.
     var requireGlassesForSpeech: Bool = true
@@ -363,6 +372,7 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     }
 
     func stopSpeaking() {
+        stopMetering()
         stopThinkingSound()
         // Bump generation so any in-flight delegate callbacks are ignored
         speechGeneration += 1
@@ -450,6 +460,37 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     }
 
     /// `prepareToPlay()` implicitly activates the audio session — synchronous I/O that
+    /// Sample the player's meter into `outputLevel` while it plays.
+    ///
+    /// `averagePower` is dBFS: roughly -60 (silence) to 0 (peak). Speech mostly lives in the
+    /// top third of that, so the floor is -50 and the normalised value is eased with a square
+    /// root — a linear map leaves quiet speech barely moving the visual.
+    @MainActor
+    private func startMetering(_ player: AVAudioPlayer) {
+        stopMetering()
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self, weak player] timer in
+            guard let self, let player, player.isPlaying else {
+                timer.invalidate()
+                Task { @MainActor [weak self] in self?.outputLevel = 0 }
+                return
+            }
+            player.updateMeters()
+            let db = Double(player.averagePower(forChannel: 0))
+            let floor = -50.0
+            let normalised = db <= floor ? 0 : min(1, (db - floor) / -floor)
+            Task { @MainActor [weak self] in
+                self?.outputLevel = sqrt(normalised)
+            }
+        }
+    }
+
+    @MainActor
+    private func stopMetering() {
+        meterTimer?.invalidate()
+        meterTimer = nil
+        outputLevel = 0
+    }
+
     /// AVAudioSession warns can hang the UI when done on the main thread. AVAudioPlayer is
     /// safe to drive from a background queue, so prepare + play happen there; the main-actor
     /// `tonePlayer` reference (set by the caller) keeps the player alive.
@@ -656,7 +697,9 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
 
         let player = try AVAudioPlayer(data: data)
         self.audioPlayer = player
+        player.isMeteringEnabled = true
         player.prepareToPlay()
+        startMetering(player)
 
         // BJ PR2: ensure the session is active off-main *before* play(), which would otherwise
         // implicitly activate it on the main thread when no exclusive owner has (CarPlay / call-active,
@@ -874,6 +917,7 @@ extension TextToSpeechService: AVAudioPlayerDelegate {
             // the same continuation the same way, so the *caller* can't tell them apart — which is
             // exactly why the mark has to be made here and not where the continuation resumes.
             if flag { TurnRecorder.markPlaybackEnd(at: finishedAt) }
+            self.stopMetering()
             self.audioPlayer = nil
             self.speechContinuation?.resume()
             self.speechContinuation = nil
