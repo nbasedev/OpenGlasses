@@ -259,7 +259,7 @@ struct StatusIndicator: View {
 
     private var activeModeBadge: some View {
         let persona = appState.activePersona
-        let name = persona?.name ?? "OpenGlasses"
+        let name = persona?.name ?? "Voice Coder"
         let icon = persona?.icon ?? "sparkles"
         let connected = appState.isConnected
         // The dot is a fill and the name beside it is text — the same state, two

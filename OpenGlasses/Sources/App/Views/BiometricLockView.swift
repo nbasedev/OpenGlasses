@@ -19,7 +19,7 @@ struct BiometricLockView: View {
                     .font(.system(size: heroGlyph))
                     .foregroundStyle(AppAccent.aiCoral)
 
-                Text("OpenGlasses")
+                Text("Voice Coder")
                     .font(.title.bold())
                     .foregroundStyle(.white)
 

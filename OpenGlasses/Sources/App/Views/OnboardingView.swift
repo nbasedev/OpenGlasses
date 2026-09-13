@@ -266,7 +266,7 @@ struct OnboardingView: View {
                         .foregroundStyle(accent)
                         .accessibilityHidden(true)
 
-                    Text("OpenGlasses")
+                    Text("Voice Coder")
                         .font(.largeTitle.weight(.bold))
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityValue(pagePosition)

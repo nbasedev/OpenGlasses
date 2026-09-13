@@ -9,9 +9,13 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
 
     /// Live loudness of the spoken answer, 0…1, for the voice visual.
     ///
-    /// Published ~20×/s while a clip plays so the waveline moves with the actual voice rather
-    /// than running a canned animation. Zero whenever nothing is playing, and on the iOS-voice
-    /// path, which synthesises straight to the output and exposes no meter.
+    /// Two sources, because the engines expose different things:
+    ///   * ElevenLabs / Kokoro play through `AVAudioPlayer`, so this is a real amplitude meter
+    ///     sampled ~20×/s.
+    ///   * The iOS voice renders straight to the output device with no meter at all, so it is
+    ///     pulsed once per word from `willSpeakRangeOfSpeechString` instead.
+    ///
+    /// Zero whenever nothing is speaking.
     @Published var outputLevel: Double = 0
 
     private var meterTimer: Timer?
@@ -791,10 +795,32 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         }
     }
 
+    /// Pulse the voice visual once per spoken word.
+    ///
+    /// `AVSpeechSynthesizer` renders straight to the output device, so there is no player and no
+    /// meter to sample — the amplitude path used for ElevenLabs/Kokoro simply does not exist here.
+    /// This callback fires as each word begins, which is the only speech-rate signal the system
+    /// voice offers. Word length sets the height, so longer words swell more, and the visual's own
+    /// decay animation falls away between them.
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
+                                       willSpeakRangeOfSpeechString characterRange: NSRange,
+                                       utterance: AVSpeechUtterance) {
+        let length = max(1, min(12, characterRange.length))
+        let level = 0.45 + (Double(length) / 12.0) * 0.55
+        Task { @MainActor in
+            self.outputLevel = level
+            // Fall back toward quiet so the next word reads as a fresh pulse rather than a
+            // plateau. Roughly one word at normal speaking rate.
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            if self.isSpeaking { self.outputLevel = 0.2 }
+        }
+    }
+
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         let finishedAt = Date()
         Task { @MainActor in
             PrivacyLog.tts(.playbackFinished, engine: PrivacyToken("system"), success: true)
+            self.outputLevel = 0
             TurnRecorder.markPlaybackEnd(at: finishedAt)
             self.speechContinuation?.resume()
             self.speechContinuation = nil
